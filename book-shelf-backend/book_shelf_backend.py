@@ -32,7 +32,7 @@ class Book(db.Model):
     title = db.Column(db.String(200), nullable=False)
     author = db.Column(db.String(100))
     year = db.Column(db.Integer)
-    price = db.Column(db.Float)  # Изменено с Numeric на Float для простоты
+    price = db.Column(db.Float) 
     quantity = db.Column(db.Integer, default=1)
     description = db.Column(db.Text)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
@@ -49,11 +49,9 @@ def init_database():
         print("🔧 Начинаем инициализацию базы данных...")
         
         with app.app_context():
-            # Создаем все таблицы
             db.create_all()
             print("✅ Таблицы созданы")
             
-            # Добавляем тестового пользователя если нет
             if User.query.count() == 0:
                 admin = User(
                     username='admin',
@@ -64,7 +62,6 @@ def init_database():
                 db.session.commit()
                 print("✅ Тестовый пользователь создан (admin/admin123)")
             
-            # Добавляем тестовые книги если нет
             if Book.query.count() == 0:
                 books = [
                     Book(title='Война и мир', author='Лев Толстой', year=1869, price=500.00, user_id=1, description='Роман-эпопея'),
@@ -137,7 +134,6 @@ def create_book():
     try:
         data = request.get_json()
         
-        # Проверка обязательных полей
         if not data.get('title'):
             return jsonify({'error': 'Название книги обязательно'}), 400
         
@@ -148,7 +144,7 @@ def create_book():
             price=data.get('price', 0),
             quantity=data.get('quantity', 1),
             description=data.get('description', ''),
-            user_id=data.get('user_id', 1)  # По умолчанию первый пользователь
+            user_id=data.get('user_id', 1)  
         )
         
         db.session.add(book)
@@ -172,7 +168,6 @@ def create_user():
     try:
         data = request.get_json()
         
-        # Проверка обязательных полей
         if not data.get('username'):
             return jsonify({'error': 'Имя пользователя обязательно'}), 400
         if not data.get('email'):
@@ -180,7 +175,6 @@ def create_user():
         if not data.get('password'):
             return jsonify({'error': 'Пароль обязателен'}), 400
         
-        # Проверка существующего пользователя
         if User.query.filter_by(username=data['username']).first():
             return jsonify({'error': 'Пользователь с таким именем уже существует'}), 400
         
@@ -214,7 +208,6 @@ def create_user():
 def test_connection():
     """Тест подключения к базе данных"""
     try:
-        # Простой запрос к базе
         users_count = User.query.count()
         books_count = Book.query.count()
         
@@ -237,12 +230,9 @@ def reset_database():
     """Сброс базы данных (только для тестирования!)"""
     try:
         with app.app_context():
-            # Удаляем все таблицы
             db.drop_all()
-            # Создаем заново
             db.create_all()
             
-            # Добавляем тестовые данные
             admin = User(username='admin', email='admin@example.com', password='admin123')
             db.session.add(admin)
             db.session.commit()
@@ -274,7 +264,6 @@ if __name__ == '__main__':
     print("=" * 60)
     
     try:
-        # Тестируем подключение при запуске
         with app.app_context():
             db.engine.connect()
             print("✅ Подключение к базе данных успешно")
