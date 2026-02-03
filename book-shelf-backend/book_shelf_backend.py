@@ -3,6 +3,8 @@ Bookshelf API - Backend для CRUD приложения "Книжная пол�
 REST API на Flask для управления книгами
 """
 
+#leanbli - Сидорова Варвара 03.02.26
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
