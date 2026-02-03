@@ -8,7 +8,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ========== НАСТРОЙКА БАЗЫ ДАННЫХ POSTGRES ==========
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost:5432/bookshelf_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost:5432/bookshelf_db'#создайте и подключить свою бд, у каждого свои пути
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key-123'
 
