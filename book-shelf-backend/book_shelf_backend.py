@@ -271,9 +271,9 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"❌ Ошибка подключения к базе: {e}")
         print("Проверьте:")
-        print("1. Запущен ли PostgreSQL на сервере 'www'")
+        print("1. Запущен ли PostgreSQL на сервере")
         print("2. Правильный ли пароль в строке подключения")
-        print("3. Существует ли база 'bookshelf_db'")
+        print("3. Существует ли база ")
         print("=" * 60)
     
     app.run(debug=True, port=5000, host='0.0.0.0')
