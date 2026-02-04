@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import psycopg2
+#комментарий Никиты Цветкова
  #комм leanbli сидорова варвара
 app = Flask(__name__)
 CORS(app)
