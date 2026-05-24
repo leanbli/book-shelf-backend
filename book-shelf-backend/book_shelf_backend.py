@@ -2,139 +2,123 @@
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import psycopg2
-#комментарий Никиты Цветкова
- #комм leanbli сидорова варвара
+from sqlalchemy import func
+
 app = Flask(__name__)
 CORS(app)
 
-# ========== НАСТРОЙКА БАЗЫ ДАННЫХ POSTGRES ==========
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost:5432/bookshelf_db'#создайте и подключить свою бд, у каждого свои пути
+# ========== НАСТРОЙКА БАЗЫ ДАННЫХ ==========
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost:5432/bookshelf'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your-secret-key-123'
 
 db = SQLAlchemy(app)
 
-# ========== МОДЕЛИ БАЗЫ ДАННЫХ ==========
+# ========== МОДЕЛИ ==========
 
 class User(db.Model):
     __tablename__ = 'users'
-    
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Genre(db.Model):
+    __tablename__ = 'genres'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.Text)
+
+class Publisher(db.Model):
+    __tablename__ = 'publishers'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+
 class Book(db.Model):
     __tablename__ = 'books'
-    
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     author = db.Column(db.String(100))
     year = db.Column(db.Integer)
-    price = db.Column(db.Float) 
+    price = db.Column(db.Float)
     quantity = db.Column(db.Integer, default=1)
     description = db.Column(db.Text)
+    publisher_id = db.Column(db.Integer, db.ForeignKey('publishers.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    rating_avg = db.Column(db.Float, default=0)
+    views_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    user = db.relationship('User', backref='books')
+    publisher = db.relationship('Publisher', backref='books')
+    genres = db.relationship('Genre', secondary='book_genres', backref=db.backref('books', lazy=True))
 
-# ========== ИНИЦИАЛИЗАЦИЯ БАЗЫ (УПРОЩЕННАЯ) ==========
+book_genres = db.Table('book_genres',
+    db.Column('book_id', db.Integer, db.ForeignKey('books.id'), primary_key=True),
+    db.Column('genre_id', db.Integer, db.ForeignKey('genres.id'), primary_key=True)
+)
 
-@app.route('/api/init-db', methods=['GET'])
-def init_database():
-    """Создание таблиц и тестовых данных"""
-    try:
-        print("🔧 Начинаем инициализацию базы данных...")
-        
-        with app.app_context():
-            db.create_all()
-            print("✅ Таблицы созданы")
-            
-            if User.query.count() == 0:
-                admin = User(
-                    username='admin',
-                    email='admin@example.com',
-                    password='admin123'
-                )
-                db.session.add(admin)
-                db.session.commit()
-                print("✅ Тестовый пользователь создан (admin/admin123)")
-            
-            if Book.query.count() == 0:
-                books = [
-                    Book(title='Война и мир', author='Лев Толстой', year=1869, price=500.00, user_id=1, description='Роман-эпопея'),
-                    Book(title='1984', author='Джордж Оруэлл', year=1949, price=300.50, user_id=1, description='Антиутопия'),
-                    Book(title='Мастер и Маргарита', author='Михаил Булгаков', year=1967, price=450.00, user_id=1, description='Философский роман')
-                ]
-                db.session.add_all(books)
-                db.session.commit()
-                print("✅ Тестовые книги добавлены")
-        
-        return jsonify({
-            'message': 'База данных инициализирована успешно',
-            'details': {
-                'users_count': User.query.count(),
-                'books_count': Book.query.count(),
-                'database': 'PostgreSQL',
-                'connection': 'postgres@www:5432/bookshelf_db'
-            }
-        })
-        
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        return jsonify({'error': str(e)}), 500
+class Review(db.Model):
+    __tablename__ = 'reviews'
+    id = db.Column(db.Integer, primary_key=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('books.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    rating = db.Column(db.Integer, nullable=False)
+    comment = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    book = db.relationship('Book', backref='reviews')
 
 # ========== API ЭНДПОИНТЫ ==========
 
-@app.route('/')
-def home():
-    return jsonify({
-        'name': 'Bookshelf API',
-        'version': '2.0',
-        'database': 'PostgreSQL',
-        'endpoints': {
-            'GET /api/books': 'Получить все книги',
-            'POST /api/books': 'Создать книгу',
-            'POST /api/users': 'Создать пользователя',
-            'GET /api/init-db': 'Инициализировать базу данных'
-        }
-    })
-
 @app.route('/api/books', methods=['GET'])
 def get_books():
-    """Получить все книги"""
     try:
         books = Book.query.all()
         result = []
         for book in books:
-            book_data = {
+            genres_list = [genre.name for genre in book.genres] if book.genres else []
+            result.append({
                 'id': book.id,
                 'title': book.title,
                 'author': book.author or 'Неизвестен',
                 'year': book.year,
                 'price': book.price,
                 'quantity': book.quantity,
-                'description': book.description or ''
-            }
-            result.append(book_data)
-        
+                'description': book.description or '',
+                'genres': genres_list,
+                'rating_avg': float(book.rating_avg) if book.rating_avg else 0,
+                'views_count': book.views_count or 0
+            })
+        return jsonify({'count': len(result), 'books': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/books/<int:book_id>', methods=['GET'])
+def get_book(book_id):
+    try:
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Книга не найдена'}), 404
+        genres_list = [{'id': g.id, 'name': g.name} for g in book.genres] if book.genres else []
         return jsonify({
-            'count': len(result),
-            'books': result
+            'id': book.id,
+            'title': book.title,
+            'author': book.author or '',
+            'year': book.year,
+            'price': book.price,
+            'quantity': book.quantity,
+            'description': book.description or '',
+            'rating_avg': float(book.rating_avg) if book.rating_avg else 0,
+            'genres': genres_list
         })
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/books', methods=['POST'])
 def create_book():
-    """Создать новую книгу"""
     try:
         data = request.get_json()
-        
         if not data.get('title'):
             return jsonify({'error': 'Название книги обязательно'}), 400
         
@@ -145,138 +129,152 @@ def create_book():
             price=data.get('price', 0),
             quantity=data.get('quantity', 1),
             description=data.get('description', ''),
-            user_id=data.get('user_id', 1)  
+            user_id=data.get('user_id', 1)
         )
-        
         db.session.add(book)
         db.session.commit()
         
-        return jsonify({
-            'message': 'Книга успешно создана',
-            'book': {
-                'id': book.id,
-                'title': book.title,
-                'author': book.author
-            }
-        }), 201
+        if data.get('genre_ids'):
+            genres = Genre.query.filter(Genre.id.in_(data['genre_ids'])).all()
+            book.genres.extend(genres)
+            db.session.commit()
         
+        return jsonify({'message': 'Книга создана', 'book': {'id': book.id, 'title': book.title}}), 201
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/users', methods=['POST'])
-def create_user():
-    """Создать нового пользователя"""
+@app.route('/api/books/<int:book_id>', methods=['PUT'])
+def update_book(book_id):
     try:
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Книга не найдена'}), 404
+        
         data = request.get_json()
+        if 'title' in data: book.title = data['title']
+        if 'author' in data: book.author = data['author']
+        if 'year' in data: book.year = data['year']
+        if 'price' in data: book.price = data['price']
+        if 'quantity' in data: book.quantity = data['quantity']
+        if 'description' in data: book.description = data['description']
         
-        if not data.get('username'):
-            return jsonify({'error': 'Имя пользователя обязательно'}), 400
-        if not data.get('email'):
-            return jsonify({'error': 'Email обязателен'}), 400
-        if not data.get('password'):
-            return jsonify({'error': 'Пароль обязателен'}), 400
+        if 'genre_ids' in data:
+            book.genres.clear()
+            genres = Genre.query.filter(Genre.id.in_(data['genre_ids'])).all()
+            book.genres.extend(genres)
         
-        if User.query.filter_by(username=data['username']).first():
-            return jsonify({'error': 'Пользователь с таким именем уже существует'}), 400
+        db.session.commit()
+        return jsonify({'message': 'Книга обновлена'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/books/<int:book_id>', methods=['DELETE'])
+def delete_book(book_id):
+    """Удалить книгу"""
+    try:
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Книга не найдена'}), 404
         
-        if User.query.filter_by(email=data['email']).first():
-            return jsonify({'error': 'Пользователь с таким email уже существует'}), 400
+        # Сохраняем название для сообщения
+        book_title = book.title
         
-        user = User(
-            username=data['username'],
-            email=data['email'],
-            password=data['password']
-        )
-        
-        db.session.add(user)
+        db.session.delete(book)
         db.session.commit()
         
-        return jsonify({
-            'message': 'Пользователь успешно создан',
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email
-            }
-        }), 201
+        return jsonify({'message': f'Книга "{book_title}" успешно удалена'})
         
     except Exception as e:
+        db.session.rollback()
+        print(f"Ошибка удаления: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ========== ПРОСТЫЕ ЭНДПОИНТЫ ДЛЯ ТЕСТИРОВАНИЯ ==========
-
-@app.route('/api/test-connection', methods=['GET'])
-def test_connection():
-    """Тест подключения к базе данных"""
+@app.route('/api/books/<int:book_id>/reviews', methods=['GET'])
+def get_reviews(book_id):
     try:
-        users_count = User.query.count()
-        books_count = Book.query.count()
-        
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Книга не найдена'}), 404
+        reviews = Review.query.filter_by(book_id=book_id).all()
+        result = [{'id': r.id, 'rating': r.rating, 'comment': r.comment, 'created_at': r.created_at.isoformat() if r.created_at else None} for r in reviews]
         return jsonify({
-            'status': 'success',
-            'message': 'Подключение к базе данных работает',
-            'stats': {
-                'users': users_count,
-                'books': books_count
-            }
+            'book_id': book_id,
+            'book_title': book.title,
+            'rating_avg': float(book.rating_avg) if book.rating_avg else 0,
+            'reviews_count': len(result),
+            'reviews': result
         })
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Ошибка подключения к базе: {str(e)}'
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/reset-db', methods=['GET'])
-def reset_database():
-    """Сброс базы данных (только для тестирования!)"""
+@app.route('/api/books/<int:book_id>/reviews', methods=['POST'])
+def add_review(book_id):
     try:
-        with app.app_context():
-            db.drop_all()
-            db.create_all()
-            
-            admin = User(username='admin', email='admin@example.com', password='admin123')
-            db.session.add(admin)
-            db.session.commit()
-            
-            books = [
-                Book(title='Война и мир', author='Лев Толстой', year=1869, price=500.00, user_id=1),
-                Book(title='1984', author='Джордж Оруэлл', year=1949, price=300.50, user_id=1),
-                Book(title='Мастер и Маргарита', author='Михаил Булгаков', year=1967, price=450.00, user_id=1)
-            ]
-            db.session.add_all(books)
-            db.session.commit()
-        
-        return jsonify({'message': 'База данных сброшена и переинициализирована'})
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Книга не найдена'}), 404
+        data = request.get_json()
+        review = Review(book_id=book_id, user_id=data.get('user_id', 1), rating=data['rating'], comment=data.get('comment', ''))
+        db.session.add(review)
+        avg_rating = db.session.query(func.avg(Review.rating)).filter(Review.book_id == book_id).scalar()
+        book.rating_avg = round(avg_rating, 2)
+        db.session.commit()
+        return jsonify({'message': 'Отзыв добавлен', 'rating_avg': float(book.rating_avg)}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/genres', methods=['GET'])
+def get_genres():
+    try:
+        genres = Genre.query.all()
+        result = [{'id': g.id, 'name': g.name, 'description': g.description or ''} for g in genres]
+        return jsonify({'genres': result})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ========== ЗАПУСК СЕРВЕРА ==========
-if __name__ == '__main__':
-    print("=" * 60)
-    print("📚 BOOKSHELF API WITH POSTGRESQL")
-    print("=" * 60)
-    print("Подключение к: postgres:1234@www:5432/bookshelf_db")
-    print("=" * 60)
-    print("Доступные команды:")
-    print("1. http://localhost:5000/              - Информация об API")
-    print("2. http://localhost:5000/api/init-db   - Инициализация БД")
-    print("3. http://localhost:5000/api/books     - Все книги")
-    print("4. http://localhost:5000/api/test-connection - Тест подключения")
-    print("=" * 60)
-    
+@app.route('/api/books/genre/<int:genre_id>', methods=['GET'])
+def get_books_by_genre(genre_id):
     try:
-        with app.app_context():
-            db.engine.connect()
-            print("✅ Подключение к базе данных успешно")
+        genre = Genre.query.get(genre_id)
+        if not genre:
+            return jsonify({'error': 'Жанр не найден'}), 404
+        books = genre.books if genre.books else []
+        result = [{'id': b.id, 'title': b.title, 'author': b.author, 'price': b.price} for b in books]
+        return jsonify({'genre': genre.name, 'count': len(result), 'books': result})
     except Exception as e:
-        print(f"❌ Ошибка подключения к базе: {e}")
-        print("Проверьте:")
-        print("1. Запущен ли PostgreSQL на сервере")
-        print("2. Правильный ли пароль в строке подключения")
-        print("3. Существует ли база ")
-        print("=" * 60)
-    
-    app.run(debug=True, port=5000, host='0.0.0.0')
+        return jsonify({'error': str(e)}), 500
 
-# Мельников Андрей 03.02 15:51
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    try:
+        stats = {
+            'total_books': Book.query.count(),
+            'total_users': User.query.count(),
+            'total_reviews': Review.query.count(),
+            'total_genres': Genre.query.count(),
+            'total_publishers': Publisher.query.count(),
+            'avg_price': float(db.session.query(func.avg(Book.price)).scalar() or 0),
+            'total_quantity': int(db.session.query(func.sum(Book.quantity)).scalar() or 0),
+            'total_views': int(db.session.query(func.sum(Book.views_count)).scalar() or 0)
+        }
+        return jsonify({'status': 'success', 'stats': stats})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
+@app.route('/api/init-db', methods=['GET'])
+def init_database():
+    try:
+        db.create_all()
+        return jsonify({'message': 'База данных готова'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    print("=" * 50)
+    print("📚 BOOKSHELF API RUNNING")
+    print("http://localhost:5000/api/books")
+    print("=" * 50)
+    app.run(debug=True, port=5000)
